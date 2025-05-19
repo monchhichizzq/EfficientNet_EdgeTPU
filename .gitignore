@@ -2,6 +2,7 @@
 __pycache__/
 *.py[cod]
 *$py.class
+efficientnet_es_input_efficientnet_es_A3
 
 # C extensions
 *.so
