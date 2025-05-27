@@ -47,8 +47,8 @@ from timm.layers import create_conv2d, create_classifier, get_norm_act_layer, La
     GroupNormAct, LayerNormAct2d, EvoNorm2dS0
 from timm.models._builder import build_model_with_cfg, pretrained_cfg_for_features
 # from torch.spatial.custom.efficientnet._efficientnet_blocks import *
-from models.efficientnet._efficientnet_blocks import SqueezeExcite
-from models.efficientnet._efficientnet_builder import BlockArgs, EfficientNetBuilder, decode_arch_def, efficientnet_init_weights, \
+from torch_spatial.custom.efficientnet._efficientnet_blocks import SqueezeExcite
+from torch_spatial.custom.efficientnet._efficientnet_builder import BlockArgs, EfficientNetBuilder, decode_arch_def, efficientnet_init_weights, \
      round_channels, resolve_bn_args, resolve_act_layer, BN_EPS_TF_DEFAULT
 # from models.imagenet.efficientnet._efficientnet_blocks import SqueezeExcite
 # from models.imagenet.efficientnet._efficientnet_builder import BlockArgs, EfficientNetBuilder, decode_arch_def, efficientnet_init_weights, \
@@ -833,6 +833,48 @@ def _gen_efficientnet_lite(variant, channel_multiplier=1.0, depth_multiplier=1.0
     )
     model = _create_effnet(variant, pretrained, **model_kwargs)
     return model
+
+
+def _gen_efficientnet_lite_fusev2(variant, channel_multiplier=1.0, depth_multiplier=1.0, pretrained=False, **kwargs):
+    """Creates an EfficientNet-Lite model.
+
+    Ref impl: https://github.com/tensorflow/tpu/tree/master/models/official/efficientnet/lite
+    Paper: https://arxiv.org/abs/1905.11946
+
+    EfficientNet params
+    name: (channel_multiplier, depth_multiplier, resolution, dropout_rate)
+      'efficientnet-lite0': (1.0, 1.0, 224, 0.2),
+      'efficientnet-lite1': (1.0, 1.1, 240, 0.2),
+      'efficientnet-lite2': (1.1, 1.2, 260, 0.3),
+      'efficientnet-lite3': (1.2, 1.4, 280, 0.3),
+      'efficientnet-lite4': (1.4, 1.8, 300, 0.3),
+
+    Args:
+      channel_multiplier: multiplier to number of channels per layer
+      depth_multiplier: multiplier to number of repeats per stage
+    """
+    arch_def = [
+        ['ds_r1_k3_s1_e1_c16'], # 1 --> conv
+        ['ef_r2_k3_s2_e6_c24'], # 2
+        ['ef_r2_k3_s2_e6_c40'], # 3
+        ['ef_r3_k3_s2_e6_c80'], # 4
+        ['ir_r3_k5_s1_e6_c112'], # 5
+        ['ir_r4_k5_s2_e6_c192'], # 6
+        ['ir_r1_k3_s1_e6_c320'], # 7
+    ]
+    model_kwargs = dict(
+        block_args=decode_arch_def(arch_def, depth_multiplier, fix_first_last=True),
+        num_features=1280,
+        stem_size=32,
+        fix_stem=True,
+        round_chs_fn=partial(round_channels, multiplier=channel_multiplier),
+        act_layer=resolve_act_layer(kwargs, 'relu6'),
+        norm_layer=kwargs.pop('norm_layer', None) or partial(nn.BatchNorm2d, **resolve_bn_args(kwargs)),
+        **kwargs,
+    )
+    model = _create_effnet(variant, pretrained, **model_kwargs)
+    return model
+
 
 
 def _gen_efficientnetv2_base(
@@ -2290,6 +2332,18 @@ def efficientnet_lite2(pretrained=False, **kwargs) -> EfficientNet:
         'efficientnet_lite2', channel_multiplier=1.1, depth_multiplier=1.2, pretrained=pretrained, 
         drop_path_rate=0.2, drop_rate=0.3, **kwargs)
     return model
+
+
+@register_model
+def efficientnet_lite2_fusev2(pretrained=False, **kwargs) -> EfficientNet:
+    """ EfficientNet-Lite2 """
+    # NOTE for train, drop_rate should be 0.3, drop_path_rate should be 0.2
+
+    model = _gen_efficientnet_lite_fusev2(
+        'efficientnet_lite2', channel_multiplier=1.1, depth_multiplier=1.2, pretrained=pretrained, 
+        drop_path_rate=0.2, drop_rate=0.3, **kwargs)
+    return model
+
 
 
 @register_model
